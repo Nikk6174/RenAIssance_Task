@@ -71,7 +71,7 @@ Applying generative LLMs (Gemini or T5) to historical transcription tasks is **c
 
 ## Usage
 
-The primary way to interact with the OCR pipeline and evaluate Character Error Rate (CER) is via the Streamlit web application.
+The primary way to interact with the OCR pipeline and evaluate Character Error Rate (CER) is via the Streamlit web application. ok
 
 1. **Run the Analysis App (Recommended)**
    ```bash
