@@ -1,0 +1,35 @@
+# Environments
+venv311/
+venv/
+env/
+.env
+*.env
+gemini.env
+
+# API Keys and Secrets
+gemini.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Models - Too large for GitHub (exceeds 100MB)
+models/
+models.txt
+
+# Generated data / Outputs
+output/
+output3/
+input/
+abc/
+ok/
+*.json
+!data/*.json  # Keep data JSONs if you want, but ignore general ones like surface_forms
+
+# Caches
+.pytest_cache/
+.streamlit/
+
+# Note: You may also want to ignore your dataset folder if it is private or very large
+# data/

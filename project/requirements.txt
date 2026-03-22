@@ -1,0 +1,27 @@
+kraken>=4.3.0
+Pillow>=10.0.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+tqdm>=4.65.0
+
+# Core image processing (already used by pipeline3.py)
+opencv-python>=4.8.0
+scipy>=1.11.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Deep learning
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Hugging Face — OCR + NLP models
+transformers>=4.40.0
+datasets>=2.18.0
+evaluate>=0.4.1
+accelerate>=0.27.0
+
+# Metrics
+jiwer>=3.0.3          # CER / WER computation (used by evaluate)
+
+# Misc
+scikit-learn>=1.3.0   # KMeans in inference notebook (not needed here but kept for compat)
