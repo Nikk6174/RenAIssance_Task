@@ -162,22 +162,72 @@ HF_T5_REPO    = "nikk6174/historical-spanish-t5"
 LOCAL_TROCR   = "models/trocr"
 LOCAL_T5      = "models/t5"
 
-def _resolve_model_path(local: str, hf_repo: str) -> str:
-    """Return local path if it exists, otherwise return the HF repo ID
-    (HuggingFace will auto-download on first use)."""
-    return local if Path(local).exists() else hf_repo
+
+def _download_with_progress(repo_id: str, label: str) -> str:
+    """Download a HF model repo with a Streamlit progress bar.
+    Returns the local cache directory path."""
+    from huggingface_hub import snapshot_download, list_repo_files
+
+    # Get list of files to calculate progress
+    try:
+        files = list_repo_files(repo_id)
+        total_files = len(files)
+    except Exception:
+        total_files = 0
+
+    status = st.status(f"⬇️ Downloading {label} from Hugging Face…", expanded=True)
+    progress_bar = status.progress(0, text=f"Starting download of {label}…")
+
+    downloaded = [0]  # mutable counter for the callback
+
+    # Download file-by-file so we can track progress
+    from huggingface_hub import hf_hub_download
+    import os
+
+    # First do snapshot_download for the whole repo (it handles caching)
+    # We'll show incremental progress by downloading each file
+    cache_dir = None
+    for i, filename in enumerate(files):
+        try:
+            path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+            )
+            # The cache directory is the parent of the downloaded file path
+            if cache_dir is None:
+                # Go up from the file to the snapshot folder
+                cache_dir = str(Path(path).parent)
+        except Exception:
+            pass
+        downloaded[0] = i + 1
+        pct = downloaded[0] / max(total_files, 1)
+        progress_bar.progress(pct, text=f"Downloading {filename} ({downloaded[0]}/{total_files})")
+
+    status.update(label=f"✅ {label} downloaded!", state="complete", expanded=False)
+    return cache_dir
+
+
+def _resolve_model_path(local: str, hf_repo: str, label: str) -> str:
+    """Return local path if it exists, otherwise download from HF Hub
+    with a progress bar in the Streamlit UI."""
+    if Path(local).exists():
+        return local
+    # Download with progress bar
+    cached_path = _download_with_progress(hf_repo, label)
+    return cached_path if cached_path else hf_repo
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Cached model loaders
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_resource(show_spinner="Loading TrOCR model…")
+@st.cache_resource(show_spinner=False)
 def load_trocr_cached():
     """Load TrOCR model once, cached across reruns."""
     from run_ocr import load_trocr
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = _resolve_model_path(LOCAL_TROCR, HF_TROCR_REPO)
-    processor, model = load_trocr(model_path, device)
+    model_path = _resolve_model_path(LOCAL_TROCR, HF_TROCR_REPO, "TrOCR (~2.4 GB)")
+    with st.spinner("Loading TrOCR model into memory…"):
+        processor, model = load_trocr(model_path, device)
     return processor, model, device
 
 
@@ -187,13 +237,14 @@ def load_dictionary_cached():
     return SpanishDictionary()
 
 
-@st.cache_resource(show_spinner="Loading T5 correction model…")
+@st.cache_resource(show_spinner=False)
 def load_t5_cached():
     """Load the T5 OCR corrector."""
     from eval_t5 import load_t5
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = _resolve_model_path(LOCAL_T5, HF_T5_REPO)
-    tokenizer, model = load_t5(model_path, device)
+    model_path = _resolve_model_path(LOCAL_T5, HF_T5_REPO, "T5 (~1.2 GB)")
+    with st.spinner("Loading T5 model into memory…"):
+        tokenizer, model = load_t5(model_path, device)
     return tokenizer, model, device
 
 
