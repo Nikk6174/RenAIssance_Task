@@ -163,71 +163,90 @@ LOCAL_TROCR   = "models/trocr"
 LOCAL_T5      = "models/t5"
 
 
-def _download_with_progress(repo_id: str, label: str) -> str:
-    """Download a HF model repo with a Streamlit progress bar.
-    Returns the local cache directory path."""
-    from huggingface_hub import snapshot_download, list_repo_files
+def _ensure_downloaded(local: str, hf_repo: str, label: str) -> str:
+    """Ensure a model is available locally (either in models/ or HF cache).
+    Shows download progress in the Streamlit UI only when actually downloading.
+    Uses session_state to avoid re-rendering download widgets on reruns."""
+    import time
 
-    # Get list of files to calculate progress
+    # 1. Local folder exists — use it directly
+    if Path(local).exists():
+        return local
+
+    # 2. Check session_state cache (already downloaded this session)
+    cache_key = f"_model_path_{hf_repo}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
+    # 3. Check if already in HF cache (downloaded previously)
     try:
-        files = list_repo_files(repo_id)
+        from huggingface_hub import snapshot_download
+        cached_path = snapshot_download(repo_id=hf_repo, local_files_only=True)
+        st.session_state[cache_key] = cached_path
+        return cached_path
+    except Exception:
+        pass  # Not in cache — need to download
+
+    # 4. Actually download with progress UI
+    from huggingface_hub import list_repo_files, hf_hub_download
+
+    try:
+        files = list_repo_files(hf_repo)
         total_files = len(files)
     except Exception:
         total_files = 0
+        files = []
 
     status = st.status(f"⬇️ Downloading {label} from Hugging Face…", expanded=True)
-    progress_bar = status.progress(0, text=f"Starting download of {label}…")
+    progress_bar = status.progress(0, text=f"Preparing download of {label}…")
 
-    downloaded = [0]  # mutable counter for the callback
-
-    # Download file-by-file so we can track progress
-    from huggingface_hub import hf_hub_download
-    import os
-
-    # First do snapshot_download for the whole repo (it handles caching)
-    # We'll show incremental progress by downloading each file
     cache_dir = None
     for i, filename in enumerate(files):
+        t0 = time.time()
         try:
-            path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-            )
-            # The cache directory is the parent of the downloaded file path
+            path = hf_hub_download(repo_id=hf_repo, filename=filename)
             if cache_dir is None:
-                # Go up from the file to the snapshot folder
                 cache_dir = str(Path(path).parent)
         except Exception:
             pass
-        downloaded[0] = i + 1
-        pct = downloaded[0] / max(total_files, 1)
-        progress_bar.progress(pct, text=f"Downloading {filename} ({downloaded[0]}/{total_files})")
+        elapsed = time.time() - t0
+        pct = (i + 1) / max(total_files, 1)
+
+        # Calculate speed for this file
+        try:
+            fsize = os.path.getsize(path) if path else 0
+            speed = fsize / max(elapsed, 0.001)
+            if speed > 1_000_000:
+                speed_str = f" — {speed / 1_000_000:.1f} MB/s"
+            elif speed > 1_000:
+                speed_str = f" — {speed / 1_000:.0f} KB/s"
+            else:
+                speed_str = ""
+        except Exception:
+            speed_str = ""
+
+        progress_bar.progress(
+            pct,
+            text=f"Downloading {filename} ({i + 1}/{total_files}){speed_str}"
+        )
 
     status.update(label=f"✅ {label} downloaded!", state="complete", expanded=False)
-    return cache_dir
 
+    if cache_dir:
+        st.session_state[cache_key] = cache_dir
+    return cache_dir if cache_dir else hf_repo
 
-def _resolve_model_path(local: str, hf_repo: str, label: str) -> str:
-    """Return local path if it exists, otherwise download from HF Hub
-    with a progress bar in the Streamlit UI."""
-    if Path(local).exists():
-        return local
-    # Download with progress bar
-    cached_path = _download_with_progress(hf_repo, label)
-    return cached_path if cached_path else hf_repo
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Cached model loaders
+# Cached model loaders (PURE — no UI elements inside)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_resource(show_spinner=False)
-def load_trocr_cached():
+@st.cache_resource(show_spinner="Loading TrOCR model into memory…")
+def _load_trocr(model_path: str):
     """Load TrOCR model once, cached across reruns."""
     from run_ocr import load_trocr
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = _resolve_model_path(LOCAL_TROCR, HF_TROCR_REPO, "TrOCR (~2.4 GB)")
-    with st.spinner("Loading TrOCR model into memory…"):
-        processor, model = load_trocr(model_path, device)
+    processor, model = load_trocr(model_path, device)
     return processor, model, device
 
 
@@ -237,15 +256,27 @@ def load_dictionary_cached():
     return SpanishDictionary()
 
 
-@st.cache_resource(show_spinner=False)
-def load_t5_cached():
+@st.cache_resource(show_spinner="Loading T5 model into memory…")
+def _load_t5(model_path: str):
     """Load the T5 OCR corrector."""
     from eval_t5 import load_t5
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = _resolve_model_path(LOCAL_T5, HF_T5_REPO, "T5 (~1.2 GB)")
-    with st.spinner("Loading T5 model into memory…"):
-        tokenizer, model = load_t5(model_path, device)
+    tokenizer, model = load_t5(model_path, device)
     return tokenizer, model, device
+
+
+# ── Public helpers that combine download + load ──────────────────────────────
+
+def load_trocr_cached():
+    """Download (if needed) then load TrOCR."""
+    model_path = _ensure_downloaded(LOCAL_TROCR, HF_TROCR_REPO, "TrOCR (~2.4 GB)")
+    return _load_trocr(model_path)
+
+
+def load_t5_cached():
+    """Download (if needed) then load T5."""
+    model_path = _ensure_downloaded(LOCAL_T5, HF_T5_REPO, "T5 (~1.2 GB)")
+    return _load_t5(model_path)
 
 
 def trocr_predict_pil(processor, model, pil_image, device) -> str:
@@ -682,6 +713,14 @@ def main():
     if input_mode.startswith("📁"):
         with st.sidebar:
             input_dir = Path("input")
+            if not input_dir.exists():
+                st.info(
+                    "📂 No `input/` folder found. Create an `input/` directory "
+                    "with numbered subfolders (e.g. `input/1/`, `input/2/`) each "
+                    "containing a source image and `transcription.txt`.\n\n"
+                    "Or use the **📤 Upload** tab to analyse your own documents."
+                )
+                return
             available = sorted(
                 [int(d.name) for d in input_dir.iterdir() if d.is_dir() and d.name.isdigit()]
             )
@@ -756,7 +795,9 @@ def main():
             )
 
         if uploaded_image and uploaded_txt:
-            if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+            st.markdown("---")
+            run_clicked = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+            if run_clicked:
                 # Read uploaded image into OpenCV BGR
                 file_bytes = np.asarray(
                     bytearray(uploaded_image.read()), dtype=np.uint8
@@ -785,9 +826,9 @@ def main():
                     )
 
                 display_results(result)
-
         elif uploaded_image or uploaded_txt:
-            st.info("⬆️ Please upload **both** the document image and the transcription file to begin.")
+            missing = "transcription (.txt)" if uploaded_image else "document image"
+            st.info(f"⏳ Please also upload the **{missing}** to run analysis.")
 
 
 if __name__ == "__main__":
