@@ -69,9 +69,34 @@ The **TrOCR model alone (coupled with deterministic rule-based corrections) is a
 
 Applying generative LLMs (Gemini or T5) to historical transcription tasks is **counter-productive** when the base OCR model is already highly accurate, as the models' inherent bias toward modern spelling and hallucinated completions introduces more errors than they fix.
 
+## Setup
+
+### 1. Clone and Install Dependencies
+```bash
+git clone https://github.com/Nikk6174/RenAIssance_Task.git
+cd RenAIssance_Task/project
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/Mac
+pip install -r requirements.txt
+```
+
+### 2. Models (Automatic)
+The fine-tuned TrOCR and T5 models are hosted on Hugging Face and will be **downloaded automatically** the first time you run the app:
+- [`nikk6174/historical-spanish-trocr`](https://huggingface.co/nikk6174/historical-spanish-trocr) (~2.4 GB)
+- [`nikk6174/historical-spanish-t5`](https://huggingface.co/nikk6174/historical-spanish-t5) (~1.2 GB)
+
+If you already have the models locally in `models/trocr` and `models/t5`, those will be used instead (no download needed).
+
+### 3. Gemini API Key (Optional)
+To use the Gemini correction stage, create a `gemini.env` file:
+```
+GEMINI_API_KEY=your_key_here
+```
+
 ## Usage
 
-The primary way to interact with the OCR pipeline and evaluate Character Error Rate (CER) is via the Streamlit web application. ok
+The primary way to interact with the OCR pipeline and evaluate Character Error Rate (CER) is via the Streamlit web application.
 
 1. **Run the Analysis App (Recommended)**
    ```bash

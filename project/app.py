@@ -154,6 +154,20 @@ st.markdown("""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Model paths — use local folder if present, otherwise download from HF Hub
+# ══════════════════════════════════════════════════════════════════════════════
+
+HF_TROCR_REPO = "nikk6174/historical-spanish-trocr"
+HF_T5_REPO    = "nikk6174/historical-spanish-t5"
+LOCAL_TROCR   = "models/trocr"
+LOCAL_T5      = "models/t5"
+
+def _resolve_model_path(local: str, hf_repo: str) -> str:
+    """Return local path if it exists, otherwise return the HF repo ID
+    (HuggingFace will auto-download on first use)."""
+    return local if Path(local).exists() else hf_repo
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Cached model loaders
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -162,7 +176,8 @@ def load_trocr_cached():
     """Load TrOCR model once, cached across reruns."""
     from run_ocr import load_trocr
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    processor, model = load_trocr("models/trocr", device)
+    model_path = _resolve_model_path(LOCAL_TROCR, HF_TROCR_REPO)
+    processor, model = load_trocr(model_path, device)
     return processor, model, device
 
 
@@ -174,10 +189,11 @@ def load_dictionary_cached():
 
 @st.cache_resource(show_spinner="Loading T5 correction model…")
 def load_t5_cached():
-    """Load the T5 OCR corrector from models/t5."""
+    """Load the T5 OCR corrector."""
     from eval_t5 import load_t5
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer, model = load_t5("models/t5", device)
+    model_path = _resolve_model_path(LOCAL_T5, HF_T5_REPO)
+    tokenizer, model = load_t5(model_path, device)
     return tokenizer, model, device
 
 
@@ -475,32 +491,32 @@ def display_results(result: dict):
             extra_cells += f"<td>{gem_text}</td>"
 
         rows_html += f"""
-        <tr{row_cls}>
-            <td>{idx + 1}{tag}</td>
-            <td>{raw_text}</td>
-            <td>{rule_text}</td>
-            {extra_cells}
-            <td>{gt_text}</td>
-            <td class="{cer_cls}">{cer_val:.2%}</td>
-            <td>{p['edit_distance']}</td>
-        </tr>"""
+<tr{row_cls}>
+    <td>{idx + 1}{tag}</td>
+    <td>{raw_text}</td>
+    <td>{rule_text}</td>
+    {extra_cells}
+    <td>{gt_text}</td>
+    <td class="{cer_cls}">{cer_val:.2%}</td>
+    <td>{p['edit_distance']}</td>
+</tr>"""
 
     st.markdown(f"""
-    <table class="alignment-table">
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>TrOCR (raw)</th>
-                <th>After Rules</th>
-                {extra_headers}
-                <th>Ground Truth</th>
-                <th>CER</th>
-                <th>Edit Dist</th>
-            </tr>
-        </thead>
-        <tbody>{rows_html}</tbody>
-    </table>
-    """, unsafe_allow_html=True)
+<table class="alignment-table">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>TrOCR (raw)</th>
+            <th>After Rules</th>
+            {extra_headers}
+            <th>Ground Truth</th>
+            <th>CER</th>
+            <th>Edit Dist</th>
+        </tr>
+    </thead>
+    <tbody>{rows_html}</tbody>
+</table>
+""", unsafe_allow_html=True)
 
     # ── Expandable: per-line crops ────────────────────────────────────────────
     with st.expander("🔍 View line crops", expanded=False):
@@ -508,9 +524,9 @@ def display_results(result: dict):
             zip(result["crop_images"], pairs)
         ):
             is_skipped = p.get("skipped", False)
-            cols = st.columns([1, 3])
+            cols = st.columns([2, 3])  # 40% image, 60% text
             with cols[0]:
-                st.image(crop_img, caption=f"Line {idx + 1}", width=300)
+                st.image(crop_img, caption=f"Line {idx + 1}", use_container_width=True)
             with cols[1]:
                 st.markdown(f"**TrOCR:** {p['trocr_text']}")
                 if idx < len(result.get("rule_preds", [])):
