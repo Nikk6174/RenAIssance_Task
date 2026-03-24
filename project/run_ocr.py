@@ -1,26 +1,4 @@
-"""
-run_ocr.py
-==========
-Full inference pipeline:
-  line-crop image  →  TrOCR  →  Gemini LLM correction  →  final text
 
-Can be run in two modes:
-
-  1. EVALUATE (default) — runs on data/val.csv and prints CER/WER
-     before and after Gemini correction.
-
-       python run_ocr.py
-
-  2. PREDICT — OCR a folder of images (no ground truth needed):
-
-       python run_ocr.py --mode predict --input_dir output3/5
-
-Environment
------------
-  Set GEMINI_API_KEY (or GOOGLE_API_KEY) before running, or pass --api_key.
-  Alternatively create a gemini.env file:
-      GEMINI_API_KEY=your_key_here
-"""
 
 import argparse
 import csv
@@ -37,27 +15,24 @@ from transformers import (
 )
 import evaluate
 
-# ── Gemini corrector (same directory) ────────────────────────────────────────
 from gemini_corrector import GeminiCorrector, get_text_changes, categorize_changes
 
 # ── Rule-based corrector ─────────────────────────────────────────────────────
 from rule_corrector import SpanishDictionary, apply_rules, normalize_for_cer
 
-# ── Config ────────────────────────────────────────────────────────────────────
+
 TROCR_MODEL_DIR = "models/trocr"
 VAL_CSV         = "data/val.csv"
 MAX_LEN         = 128
 BEAM_SIZE       = 4
 GEMINI_MODEL    = "gemini-2.5-flash"
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 cer_metric = evaluate.load("cer")
 wer_metric = evaluate.load("wer")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Gemini API key resolution
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def _resolve_api_key(cli_key: str | None) -> str:
     """
@@ -90,9 +65,6 @@ def _resolve_api_key(cli_key: str | None) -> str:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TrOCR loader & positional-embedding patch
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _patch_embed_positions(model: VisionEncoderDecoderModel) -> None:
     """
@@ -150,9 +122,7 @@ def load_trocr(model_dir: str, device):
     return processor, model
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Inference helpers
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def trocr_predict(processor, model, image_path: str, device) -> str:
     image  = Image.open(image_path).convert("RGB")
@@ -168,25 +138,23 @@ def compute_scores(preds: list[str], refs: list[str]) -> dict:
     return {"CER": round(cer, 4), "WER": round(wer, 4)}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Mode 1: Evaluate on val.csv
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def run_evaluate(device, api_key: str):
     print("\n" + "=" * 60)
     print("  EVALUATION MODE  (TrOCR → Gemini correction)")
     print("=" * 60)
 
-    # ── Load models ───────────────────────────────────────────────────────────
+    
     trocr_proc, trocr_model = load_trocr(TROCR_MODEL_DIR, device)
     corrector               = GeminiCorrector(api_key=api_key, model=GEMINI_MODEL)
 
-    # ── Load val set ──────────────────────────────────────────────────────────
+    
     with open(VAL_CSV, newline="", encoding="utf-8") as f:
         val_rows = list(csv.DictReader(f))[:19]
     print(f"\nEvaluating on {len(val_rows)} val lines…")
 
-    # ── Load dictionary for rule-based correction ─────────────────────────────
+    
     print("Loading Spanish dictionary for rule-based corrections…")
     dictionary = SpanishDictionary()
 
@@ -232,12 +200,12 @@ def run_evaluate(device, api_key: str):
         if (i + 1) % 10 == 0 or i == len(val_rows) - 1:
             print(f"  {i + 1}/{len(val_rows)}")
 
-    # ── Metrics ───────────────────────────────────────────────────────────────
+    
     raw_scores   = compute_scores(raw_preds,       references)
     rule_scores  = compute_scores(rule_preds,      references)
     corr_scores  = compute_scores(corrected_preds, references)
 
-    # ── Accent-normalised CER (since accents are inconsistent) ────────────────
+    
     norm_preds = [normalize_for_cer(p) for p in corrected_preds]
     norm_refs  = [normalize_for_cer(r) for r in references]
     norm_cer   = round(cer_metric.compute(predictions=norm_preds, references=norm_refs), 4)
@@ -258,7 +226,7 @@ def run_evaluate(device, api_key: str):
     print("  CER = Character Error Rate (lower is better)")
     print("  WER = Word Error Rate      (lower is better)")
 
-    # ── Sample outputs ────────────────────────────────────────────────────────
+   
     print("\n  Sample predictions (first 5):")
     for r in results[:5]:
         print(f"    GT        : {r['gt']}")
@@ -269,7 +237,7 @@ def run_evaluate(device, api_key: str):
               f"(OCR={r['n_ocr_fixes']}, semantic={r['n_semantic_fixes']})")
         print()
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    
     out_path = Path("data/eval_results.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -285,9 +253,7 @@ def run_evaluate(device, api_key: str):
     print(f"  Full results → {out_path}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Mode 2: Predict on a folder (no ground truth)
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def run_predict(input_dir: str, device, api_key: str):
     print("\n" + "=" * 60)
@@ -344,7 +310,7 @@ def run_predict(input_dir: str, device, api_key: str):
             "semantic_fixes": len(cats["orthographic_errors"]),
         })
 
-    # ── Save outputs ──────────────────────────────────────────────────────────
+    
     base     = Path(input_dir)
     out_txt  = base / "ocr_output.txt"
     out_raw  = base / "ocr_raw_trocr.txt"
@@ -360,9 +326,7 @@ def run_predict(input_dir: str, device, api_key: str):
     print(f"  Per-image meta   → {out_json}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Entry point
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

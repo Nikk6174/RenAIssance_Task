@@ -1,12 +1,4 @@
-"""
-eval_t5.py — Evaluate T5 OCR corrector on aligned val set
-==========================================================
-Loads the trained T5 model from models/t5, runs it on TrOCR predictions
-(using the realigned val set), and compares CER against rule-based and
-Gemini results.
 
-No API calls needed — everything runs locally.
-"""
 
 import csv
 import json
@@ -25,10 +17,10 @@ from transformers import (
 )
 import evaluate
 
-# ── Local imports ─────────────────────────────────────────────────────────────
+
 from rule_corrector import SpanishDictionary, apply_rules, normalize_for_cer
 
-# ── Config ────────────────────────────────────────────────────────────────────
+
 TROCR_MODEL_DIR = "models/trocr"
 T5_MODEL_DIR    = "models/t5"
 VAL_CSV         = "data/val.csv"
@@ -42,7 +34,7 @@ cer_metric = evaluate.load("cer")
 wer_metric = evaluate.load("wer")
 
 
-# ── TrOCR helpers (same as realign_and_eval.py) ──────────────────────────────
+
 
 def _patch_embed_positions(model):
     embed_pos = model.decoder.model.decoder.embed_positions
@@ -91,7 +83,7 @@ def trocr_predict(processor, model, image_path, device):
     return processor.tokenizer.decode(ids[0], skip_special_tokens=True).strip()
 
 
-# ── T5 helpers ────────────────────────────────────────────────────────────────
+
 
 def load_t5(model_dir, device):
     print(f"Loading T5 from {model_dir}…")
@@ -131,7 +123,7 @@ def t5_correct(text: str, tokenizer, model, device) -> str:
     return result
 
 
-# ── Alignment helper ─────────────────────────────────────────────────────────
+
 
 def find_best_gt_match(trocr_text: str, all_gt_lines: list[str]):
     best_idx = 0
@@ -150,7 +142,7 @@ def compute_scores(preds, refs):
     return {"CER": round(cer, 4), "WER": round(wer, 4)}
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,7 +163,7 @@ def main():
     print("Loading Spanish dictionary…")
     dictionary = SpanishDictionary()
 
-    # ── Run pipeline ──────────────────────────────────────────────────────────
+    
     print("\nRunning 4-stage evaluation:")
     print("  Stage 1: TrOCR → Stage 2: Rules → Stage 3: T5 → Metrics\n")
 
@@ -200,7 +192,7 @@ def main():
         if (i + 1) % 5 == 0 or i == len(val_rows) - 1:
             print(f"  {i + 1}/{len(val_rows)}")
 
-    # ── Compute metrics ───────────────────────────────────────────────────────
+    
     trocr_scores = compute_scores(trocr_preds, aligned_refs)
     rule_scores  = compute_scores(rule_preds,  aligned_refs)
     t5_scores    = compute_scores(t5_preds,    aligned_refs)
@@ -218,7 +210,7 @@ def main():
             gdata = json.load(f)
         gemini_cer = gdata["metrics"]["after_gemini"]["CER"]
 
-    # ── Print results ─────────────────────────────────────────────────────────
+   
     print("\n" + "═" * 65)
     print("  RESULTS — T5 vs Gemini comparison")
     print("═" * 65)
@@ -234,7 +226,7 @@ def main():
     print(f"  T5 total improvement     │ {t5_delta:+.4f}  │")
     print("═" * 65)
 
-    # ── Sample comparisons ────────────────────────────────────────────────────
+    
     print("\n  Sample line-by-line comparisons:")
     for i in range(min(10, len(val_rows))):
         gt = aligned_refs[i]
@@ -253,7 +245,7 @@ def main():
         print(f"        T5    : {t5}")
         print()
 
-    # ── Save results ──────────────────────────────────────────────────────────
+    
     out = Path("data/eval_results_t5.json")
     samples = []
     for i in range(len(val_rows)):

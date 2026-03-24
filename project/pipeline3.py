@@ -1,27 +1,4 @@
-"""
-Text Line Extraction & Transcription Mapping Pipeline
-======================================================
-Fully adaptive: measures the actual line period (font height + gap) from
-each page's ink-density signal via autocorrelation, so it works correctly
-regardless of font size, zoom level, or scan resolution.
 
-For each folder in input/ (1..20):
-  - Reads source image (any common format) + transcription.txt
-  - Detects text lines dynamically
-  - Crops each line with adaptive padding
-  - Maps crop → transcription line 1-to-1
-
-Output structure:
-  output2/
-    1/
-      line_001.png
-      line_002.png
-      ...
-      annotated.png
-      mapping.json
-    ...
-    pipeline_summary.json
-"""
 
 import json
 import cv2
@@ -30,9 +7,7 @@ from pathlib import Path
 import shutil
 from scipy.signal import find_peaks
 
-# ─────────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────────
+
 INPUT_DIR  = "input"
 OUTPUT_DIR = "output"
 
@@ -45,12 +20,10 @@ MARGIN_FILTER_RATIO = 0.20
 
 # Supported source image extensions (tried in order)
 IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp']
-# ─────────────────────────────────────────────
 
 
-# ══════════════════════════════════════════════
-# 1.  LOW-LEVEL IMAGE UTILITIES
-# ══════════════════════════════════════════════
+
+
 
 def binarize(image_bgr):
     """Otsu binarization → ink=white, background=black."""
@@ -70,9 +43,7 @@ def _moving_avg(arr, window):
     return np.convolve(arr.astype(float), np.ones(w) / w, mode='same')
 
 
-# ══════════════════════════════════════════════
-# 2.  ADAPTIVE LINE PERIOD ESTIMATION
-# ══════════════════════════════════════════════
+
 
 def estimate_line_period_acf(proj):
     """
@@ -127,9 +98,7 @@ def estimate_line_period_cc(image_bgr):
     return max(8, int(np.percentile(good, 75) * 1.5))
 
 
-# ══════════════════════════════════════════════
-# 3.  ADAPTIVE LINE SEGMENTATION
-# ══════════════════════════════════════════════
+
 
 def find_line_segments(proj, image_bgr):
     """
@@ -355,9 +324,7 @@ def detect_text_lines(image_bgr):
     return boxes, stats
 
 
-# ══════════════════════════════════════════════
-# 4.  CROP WITH ADAPTIVE PADDING
-# ══════════════════════════════════════════════
+
 
 def crop_line(image_bgr, bbox, pad_v, pad_h):
     h, w = image_bgr.shape[:2]
@@ -369,9 +336,7 @@ def crop_line(image_bgr, bbox, pad_v, pad_h):
     return image_bgr[y1p:y2p, x1p:x2p], [x1p, y1p, x2p, y2p]
 
 
-# ══════════════════════════════════════════════
-# 5.  TRANSCRIPTION UTILITIES
-# ══════════════════════════════════════════════
+
 
 def read_transcription(txt_path):
     for enc in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']:
@@ -414,9 +379,7 @@ def align_lines(detected_boxes, transcription_lines, verbose=True):
     return pairs, unmatched_text
 
 
-# ══════════════════════════════════════════════
-# 6.  VISUALISATION
-# ══════════════════════════════════════════════
+
 
 def draw_annotated(image_bgr, pairs, stats):
     vis = image_bgr.copy()
@@ -443,9 +406,7 @@ def draw_annotated(image_bgr, pairs, stats):
     return vis
 
 
-# ══════════════════════════════════════════════
-# 7.  SOURCE IMAGE DISCOVERY
-# ══════════════════════════════════════════════
+
 
 def find_source_image(folder_path):
     folder_path = Path(folder_path)
@@ -459,9 +420,7 @@ def find_source_image(folder_path):
     return None
 
 
-# ══════════════════════════════════════════════
-# 8.  PROCESS ONE FOLDER
-# ══════════════════════════════════════════════
+
 
 def process_folder(folder_id, input_root, output_root):
     folder_path = Path(input_root) / str(folder_id)
@@ -501,17 +460,17 @@ def process_folder(folder_id, input_root, output_root):
     print(f"  Adaptive padding → vertical=±{pad_v}px  horizontal=±{pad_h}px")
     print(f"  → {len(boxes)} text-line regions detected")
 
-    # ── Align ────────────────────────────────────────────────────────────
+   
     pairs, unmatched = align_lines(boxes, trans_lines, verbose=True)
 
-    # ── Output dir ───────────────────────────────────────────────────────
+    
     out_dir = Path(output_root) / str(folder_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dest_img = out_dir / f"source{src_img.suffix}"
     shutil.copy(str(src_img), str(dest_img))
 
-    # ── Crop and save lines ───────────────────────────────────────────────
+    
     mapping_records = []
     for p in pairs:
         crop, padded_bbox = crop_line(image_bgr, p['bbox'], pad_v, pad_h)
@@ -526,11 +485,11 @@ def process_folder(folder_id, input_root, output_root):
             "matched"       : p['matched'],
         })
 
-    # ── Annotated image ───────────────────────────────────────────────────
+    
     annotated = draw_annotated(image_bgr, pairs, stats)
     cv2.imwrite(str(out_dir / "annotated.png"), annotated)
 
-    # ── mapping.json ─────────────────────────────────────────────────────
+    
     result = {
         "folder_id"                    : folder_id,
         "source_image"                 : dest_img.name,
@@ -550,9 +509,7 @@ def process_folder(folder_id, input_root, output_root):
     return result
 
 
-# ══════════════════════════════════════════════
-# 9.  RUN ALL FOLDERS
-# ══════════════════════════════════════════════
+
 
 def run_pipeline(input_dir=INPUT_DIR, output_dir=OUTPUT_DIR,
                  folder_range=range(1, 21)):

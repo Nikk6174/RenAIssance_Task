@@ -1,27 +1,4 @@
-"""
-gemini_corrector.py
-===================
-Gemini-powered post-OCR correction for historical Spanish text.
 
-Drop-in replacement for the T5 correction stage used in run_ocr.py.
-Also exposes helpers for change-tracking and error categorisation that
-were developed in the CORRECTIONS_LLM notebook.
-
-Public API
-----------
-  gemini_correct(text, api_key, model, max_retries)  →  str
-  get_text_changes(original, corrected)              →  list[TextChange]
-  print_changes(changes)
-  categorize_changes(changes)                        →  dict
-  compute_correction_metrics(original, corrected)    →  dict
-
-Quick usage
------------
-  from gemini_corrector import GeminiCorrector
-
-  corrector = GeminiCorrector(api_key="YOUR_KEY")
-  fixed = corrector.correct("vueftra Benignidad profeguid")
-"""
 
 from __future__ import annotations
 
@@ -65,18 +42,14 @@ except ImportError as e:
     genai = None  # type: ignore
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Config
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 DEFAULT_MODEL      = "gemini-2.5-flash"
 DEFAULT_MAX_RETRY  = 5
 DEFAULT_BACKOFF    = 15  # seconds base to handle 5 RPM rate limits
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Prompt
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def _build_prompt(text: str) -> str:
     """
@@ -143,9 +116,7 @@ OCR text:
 Corrected:"""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Core corrector class
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 class GeminiCorrector:
     """
@@ -260,9 +231,7 @@ class GeminiCorrector:
         return corrected
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Change-tracking (ported from notebook)
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class TextChange:
@@ -374,9 +343,7 @@ def save_changes(changes: list[TextChange], path: str | Path = "text_changes.jso
     print(f"  Changes saved → {path}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Metrics (optional — require editdistance / sklearn)
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def compute_correction_metrics(text1: str, text2: str) -> dict:
     """
@@ -414,9 +381,7 @@ def compute_correction_metrics(text1: str, text2: str) -> dict:
     return result
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Internal helpers
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def _whitespace_spans(text: str) -> list[tuple[int, int]]:
     """Return (start, end) tuples for each whitespace-split token."""
@@ -430,9 +395,7 @@ def _whitespace_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CLI smoke-test
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 if __name__ == "__main__":
     import os

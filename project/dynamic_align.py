@@ -1,26 +1,4 @@
 # pyre-unsafe
-"""
-dynamic_align.py
-================
-Order-preserving dynamic alignment for TrOCR predictions vs ground truth.
-
-Uses dynamic programming (Needleman-Wunsch style) to find the optimal
-alignment between detected-line predictions and GT transcription lines.
-
-Key capabilities:
-  • Handles EXTRA detected boxes (titles, noise) — they get skipped
-  • Handles MISSING detections (GT lines with no box) — they get skipped
-  • Preserves top-to-bottom order — no swapping or crossing
-  • Minimises total edit distance across the whole document
-
-Usage
------
-    from dynamic_align import align_with_local_window, compute_aggregate_cer
-
-    pairs = align_with_local_window(trocr_preds, gt_lines, window=5)
-    for p in pairs:
-        print(p["trocr_text"], "→", p["matched_gt"], f"CER={p['cer']:.2%}")
-"""
 
 from __future__ import annotations
 
@@ -35,9 +13,7 @@ def _edit_dist(a: str, b: str) -> int:
     return int(result)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Core alignment  (DP — order-preserving)
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 _MATCH  = 0   # traceback: matched pred[i] ↔ gt[j]
 _SKIP_P = 1   # traceback: skipped prediction i  (extra detected box)
@@ -202,9 +178,7 @@ def _make_pair(
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Aggregate metrics
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def compute_aggregate_cer(pairs: list[dict]) -> dict:
     """
@@ -248,9 +222,7 @@ def compute_sequential_cer(trocr_preds: list[str], gt_lines: list[str]) -> float
     return round(float(total_edit) / max(total_ref, 1), 4)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Self-test
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 if __name__ == "__main__":
     print("=" * 65)

@@ -1,22 +1,4 @@
-"""
-rule_corrector.py
-=================
-Deterministic, rule-based post-OCR correction for 17th-century Spanish text.
 
-Applied BEFORE the LLM stage to handle systematic OCR confusions
-that a generative model tends to over-correct.
-
-Rules implemented
------------------
-1. ç  → z   (always — old orthographic convention)
-2. u ↔ v    check both variants against dictionary, pick the valid one
-3. f ↔ s    check both variants against dictionary, pick the valid one
-4. accent normalisation helper (for CER evaluation — accents are inconsistent)
-
-The dictionary is a union of:
-  • Standard modern Spanish word list (hunspell-based)
-  • All ground-truth words from train.csv & val.csv (archaic forms)
-"""
 
 from __future__ import annotations
 
@@ -27,9 +9,7 @@ from pathlib import Path
 from itertools import product
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Accent helpers
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def strip_accents(text: str) -> str:
     """Remove combining diacritical marks (accents) but keep ñ and ç."""
@@ -53,9 +33,7 @@ def normalize_for_cer(text: str) -> str:
     return t
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Spanish Dictionary
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 class SpanishDictionary:
     """
@@ -282,9 +260,7 @@ class SpanishDictionary:
         return self._normalise(word) in self._words
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Rule-based correction
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def _generate_uv_variants(word: str) -> list[str]:
     """
@@ -422,9 +398,7 @@ def apply_rules(text: str, dictionary: SpanishDictionary | None = None) -> str:
     return "".join(corrected_tokens)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CLI smoke-test
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 if __name__ == "__main__":
     print("Loading dictionary…")
