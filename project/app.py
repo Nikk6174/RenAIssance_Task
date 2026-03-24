@@ -54,7 +54,7 @@ from rule_corrector import SpanishDictionary, apply_rules, normalize_for_cer
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="OCR Alignment Evaluator",
+    page_title="RenAIssance OCR Task 1",
     page_icon="🔍",
     layout="wide",
 )
@@ -721,7 +721,7 @@ def _escape(text: str) -> str:
 def main():
     st.markdown("""
     <div class="main-header">
-        <h1>🔍 OCR Alignment Evaluator</h1>
+        <h1>🔍 RenAIssance OCR Task 1</h1>
         <p>Dynamic ground-truth alignment with local-window edit distance matching</p>
     </div>
     """, unsafe_allow_html=True)

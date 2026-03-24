@@ -199,17 +199,50 @@ We evaluated two LLMs for post-OCR correction:
       stage helps or hurts — eliminating guesswork.
 
 
-4.5  Accent-Normalised CER Metric
-──────────────────────────────────
-
-Standard CER penalises the model for producing correctly accented modern Spanish
-(e.g., "también") when the 17th-century source text omitted the accent
-("tambien"). This is a measurement artefact, not a model error.
+4.5  Accent-Normalised CER Metric (Novel)
+───────────────────────────────────────────
 
 We introduced accent_norm_cer: a modified CER computation that strips Unicode
 combining characters (á→a, é→e, í→i, ó→o, ú→u, ñ→n) before computing edit
-distance. This metric accurately reflects the model's true transcription
-quality on historical texts where accentuation is fundamentally inconsistent.
+distance. This reduces measured CER from ~5–7% to ~3%.
+
+  Importance:
+    Standard CER conflates two fundamentally different error types: (a) genuine
+    misrecognitions (e.g., "Bastero" → "Bastero") and (b) accent discrepancies
+    that arise from inconsistent historical orthography, not model failure. In
+    17th-century Spanish, accent marks were applied sporadically and followed no
+    standardised rules — the same word might appear with or without accents on
+    the same page. Without normalisation, CER systematically overstates the
+    model's true error rate, making it impossible to distinguish real
+    transcription failures from harmless diacritical variation. This metric
+    isolates the model's actual character-recognition capability.
+
+  Use Cases:
+    • Fair benchmarking across historical periods: Comparing OCR accuracy on
+      texts from different centuries (where accentuation conventions differ)
+      requires a metric that is invariant to diacritical variation.
+    • Downstream NLP readiness: For information retrieval, named-entity
+      recognition, and corpus linguistic analysis on historical texts, accent
+      differences are typically irrelevant — accent_norm_cer directly measures
+      whether the output is usable for these tasks.
+    • Model development feedback: During fine-tuning, standard CER may plateau
+      or regress when the model learns to add modern accents. Accent-normalised
+      CER provides a cleaner training signal that rewards genuine character
+      accuracy improvements.
+
+  Weaknesses:
+    • Over-smoothing: The metric cannot distinguish cases where accents ARE
+      meaningful. For example, "él" (he) vs "el" (the) are semantically
+      different, but accent_norm_cer treats them as identical — masking a
+      real error that affects meaning.
+    • Not suitable for modern text evaluation: On post-19th-century texts
+      where accentuation is standardised, this metric would artificially
+      inflate accuracy by forgiving genuine accent errors.
+    • ñ normalisation risk: Stripping ñ→n collapses "año" (year) and "ano"
+      (anus) — a semantically significant distinction that this metric ignores.
+    • Metric only, not correction: It measures differently but does not fix
+      anything — the raw output still contains the accent mismatches, so
+      downstream consumers must decide independently how to handle diacritics.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
