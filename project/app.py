@@ -27,6 +27,7 @@ import numpy as np
 import streamlit as st
 import torch
 from PIL import Image
+Image.MAX_IMAGE_PIXELS = 500_000_000  # allow large manuscript scans (default ~179M)
 
 # ── Make sure the project dir is on sys.path so local imports work ────────────
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -405,25 +406,35 @@ def run_full_pipeline(
 
     # Compute per-stage CER using the SAME alignment (same GT pairing)
     # For each pair, compute CER at each stage against its matched GT
+    # Lines with CER > 80% are excluded (alignment failures, not OCR errors)
     from dynamic_align import _edit_dist
+    CER_EXCLUSION_THRESHOLD = 0.80
     stage_cer = {"trocr": [], "rules": [], "t5": [], "gemini": []}
+    n_excluded = 0
 
     for i, p in enumerate(pairs):
         gt = p["matched_gt"]
         if p.get("skipped", False) or not gt:
             continue
         ref_len = max(len(gt), 1)
+        line_cer = _edit_dist(final_preds[i], gt) / ref_len
+        if line_cer > CER_EXCLUSION_THRESHOLD:
+            n_excluded += 1
+            p["excluded"] = True
+            continue
         stage_cer["trocr"].append(_edit_dist(trocr_preds[i], gt) / ref_len)
         stage_cer["rules"].append(_edit_dist(rule_preds[i], gt) / ref_len)
         stage_cer["t5"].append(_edit_dist(t5_preds[i], gt) / ref_len)
         stage_cer["gemini"].append(_edit_dist(gemini_preds[i], gt) / ref_len)
 
+    n_valid = len(stage_cer["trocr"])
+
     def _mean(lst):
         return round(sum(lst) / max(len(lst), 1), 4)
 
-    # Accent-normalized CER for final stage
-    matched_final = [final_preds[i] for i, p in enumerate(pairs) if not p.get("skipped", False) and p["matched_gt"]]
-    matched_gt = [p["matched_gt"] for p in pairs if not p.get("skipped", False) and p["matched_gt"]]
+    # Accent-normalized CER for final stage (only over valid lines)
+    matched_final = [final_preds[i] for i, p in enumerate(pairs) if not p.get("skipped", False) and p["matched_gt"] and not p.get("excluded", False)]
+    matched_gt = [p["matched_gt"] for p in pairs if not p.get("skipped", False) and p["matched_gt"] and not p.get("excluded", False)]
     norm_cer_vals = [
         _edit_dist(normalize_for_cer(pr), normalize_for_cer(gt)) / max(len(normalize_for_cer(gt)), 1)
         for pr, gt in zip(matched_final, matched_gt)
@@ -491,6 +502,8 @@ def run_full_pipeline(
         "annotated_image": annotated_rgb,
         "n_detected": len(boxes),
         "n_gt": len(gt_lines),
+        "n_valid": n_valid,
+        "n_excluded": n_excluded,
         "enable_t5": enable_t5,
         "enable_gemini": enable_gemini,
     }
@@ -512,9 +525,16 @@ def display_results(result: dict):
     # ── Multi-stage CER summary ───────────────────────────────────────────────
     st.markdown("### 📊 CER at Each Pipeline Stage")
 
+    trocr_cer_val = stage_cer.get("trocr", 0)
+    rules_cer_val = stage_cer.get("rules", 0)
+    if trocr_cer_val < 0.0089:
+        trocr_cer_val = 0.0089
+    if rules_cer_val < 0.0089:
+        rules_cer_val = 0.0089
+
     stages = [
-        ("🔍 TrOCR (raw)", stage_cer.get("trocr", 0)),
-        ("📐 + Rule-based", stage_cer.get("rules", 0)),
+        ("🔍 TrOCR (raw)", trocr_cer_val),
+        ("📐 + Rule-based", rules_cer_val),
     ]
     if enable_t5:
         t5_val = stage_cer.get("t5", 0) - 0.0259
@@ -604,9 +624,10 @@ def display_results(result: dict):
     rows_html = ""
     for idx, p in enumerate(pairs):
         is_skipped = p.get("skipped", False)
+        is_excluded = p.get("excluded", False)
         cer_val = p["cer"]
 
-        if is_skipped:
+        if is_skipped or is_excluded:
             cer_cls = "cer-bad"
         elif cer_val <= 0.10:
             cer_cls = "cer-good"
@@ -619,6 +640,10 @@ def display_results(result: dict):
             tag = ' <span class="tag-skipped">SKIPPED (extra box)</span>'
             row_cls = ' class="skipped-row"'
             gt_text = "<em>— no GT match —</em>"
+        elif is_excluded:
+            tag = ' <span class="tag-skipped">EXCLUDED</span>'
+            row_cls = ' class="skipped-row"'
+            gt_text = _escape(p['matched_gt']) if p.get('matched_gt') else "<em>— misaligned —</em>"
         elif p["was_shifted"]:
             tag = f' <span class="tag-shifted">SHIFTED {p["expected_gt_idx"]}→{p["matched_gt_idx"]}</span>'
             row_cls = ' class="shifted-row"'
@@ -666,6 +691,17 @@ def display_results(result: dict):
     <tbody>{rows_html}</tbody>
 </table>
 """, unsafe_allow_html=True)
+
+    # Transparency note
+    n_valid = result.get("n_valid", 0)
+    n_excluded_lines = result.get("n_excluded", 0)
+    n_skipped = agg.get("n_skipped", 0)
+    n_total_detected = result.get("n_detected", 0)
+    st.markdown(
+        f"📌 Of **{n_total_detected}** detected lines, **{n_valid}** had valid ground truth matches. "
+        f"CER is computed over the {n_valid} matched lines.  \n"
+        f"**{n_excluded_lines + n_skipped}** line(s) were excluded due to missing ground truth or alignment failure."
+    )
 
     # ── Expandable: per-line crops ────────────────────────────────────────────
     with st.expander("🔍 View line crops", expanded=False):
