@@ -8,6 +8,7 @@ gemini.env
 
 # API Keys and Secrets
 gemini.env
+hf_token.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

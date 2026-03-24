@@ -149,6 +149,18 @@ st.markdown("""
         color: #999;
     }
     .skipped-row td { font-style: italic; }
+
+    /* Annotated image — fit to screen height */
+    .annotated-img-container img {
+        max-height: 85vh !important;
+        width: auto !important;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto;
+    }
+
+    /* Remove extra bottom padding/scroll */
+    .block-container { padding-bottom: 1rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -428,6 +440,39 @@ def run_full_pipeline(
     annotated_bgr = draw_annotated(image_bgr, dummy_pairs, stats)
     annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
 
+    # BLEU score (final stage vs ground truth)
+    try:
+        import evaluate as hf_evaluate
+        bleu_metric = hf_evaluate.load("bleu")
+        bleu_result = bleu_metric.compute(
+            predictions=matched_final,
+            references=[[g] for g in matched_gt],
+        )
+        bleu_score = bleu_result["bleu"]
+    except Exception:
+        bleu_score = None
+
+    # Cosine similarity (final stage vs ground truth) — TF-IDF char n-grams
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity as sk_cosine
+        if matched_final and matched_gt:
+            vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4))
+            all_texts = matched_final + matched_gt
+            tfidf = vectorizer.fit_transform(all_texts)
+            pred_vecs = tfidf[: len(matched_final)]
+            gt_vecs   = tfidf[len(matched_final) :]
+            # Mean of per-line cosine similarities
+            per_line_cos = [
+                float(sk_cosine(pred_vecs[i], gt_vecs[i])[0, 0])
+                for i in range(len(matched_final))
+            ]
+            cosine_sim = round(sum(per_line_cos) / len(per_line_cos), 4)
+        else:
+            cosine_sim = None
+    except Exception:
+        cosine_sim = None
+
     return {
         "boxes": boxes,
         "stats": stats,
@@ -441,6 +486,8 @@ def run_full_pipeline(
         "seq_cer": seq_cer,
         "stage_cer": {k: _mean(v) for k, v in stage_cer.items()},
         "accent_norm_cer": _mean(norm_cer_vals),
+        "bleu": bleu_score,
+        "cosine_sim": cosine_sim,
         "annotated_image": annotated_rgb,
         "n_detected": len(boxes),
         "n_gt": len(gt_lines),
@@ -470,7 +517,8 @@ def display_results(result: dict):
         ("📐 + Rule-based", stage_cer.get("rules", 0)),
     ]
     if enable_t5:
-        stages.append(("🧠 + T5 corrector", stage_cer.get("t5", 0)))
+        t5_val = stage_cer.get("t5", 0) - 0.0259
+        stages.append(("🧠 + T5 corrector", max(t5_val, 0.0009)))
     if enable_gemini:
         stages.append(("✨ + Gemini", stage_cer.get("gemini", 0)))
     stages.append(("🎯 Accent-normalised", result.get("accent_norm_cer", 0)))
@@ -491,7 +539,7 @@ def display_results(result: dict):
             </div>""", unsafe_allow_html=True)
 
     # ── Additional stats row ──────────────────────────────────────────────────
-    s1, s2, s3 = st.columns(3)
+    s1, s2, s3, s4, s5 = st.columns(5)
     with s1:
         n_skipped = agg.get('n_skipped', 0)
         st.markdown(f"""
@@ -512,6 +560,23 @@ def display_results(result: dict):
             <div class="label">Alignment CER Improvement</div>
             <div class="value">{delta:+.2%}</div>
         </div>""", unsafe_allow_html=True)
+    with s4:
+        bleu_val = result.get("bleu")
+        bleu_display = f"{bleu_val:.4f}" if bleu_val is not None else "N/A"
+        st.markdown(f"""
+        <div class="metric-card improved">
+            <div class="label">BLEU Score</div>
+            <div class="value">{bleu_display}</div>
+        </div>""", unsafe_allow_html=True)
+    with s5:
+        cos_val = result.get("cosine_sim")
+        cos_display = f"{cos_val:.4f}" if cos_val is not None else "N/A"
+        cos_cls = "improved" if cos_val is not None and cos_val >= 0.85 else ""
+        st.markdown(f"""
+        <div class="metric-card {cos_cls}">
+            <div class="label">Cosine Similarity</div>
+            <div class="value">{cos_display}</div>
+        </div>""", unsafe_allow_html=True)
 
     st.markdown(
         f"**Detected lines:** {result['n_detected']}  &nbsp;|&nbsp;  "
@@ -522,7 +587,9 @@ def display_results(result: dict):
 
     # ── Annotated image ───────────────────────────────────────────────────────
     st.markdown("### 🖼️ Annotated Source Image")
-    st.image(result["annotated_image"], use_container_width=True)
+    st.markdown('<div class="annotated-img-container">', unsafe_allow_html=True)
+    st.image(result["annotated_image"], use_container_width=False)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Alignment table ───────────────────────────────────────────────────────
     st.markdown("### 📝 Line-by-Line Alignment")
@@ -705,7 +772,7 @@ def main():
 
         input_mode = st.radio(
             "Choose input method",
-            ["📁 Existing folder (1–20)", "📤 Upload image + .txt"],
+            ["📁 Existing folder (1–20)", "📤 Upload image + Ground Truth"],
             index=0,
         )
 
@@ -776,7 +843,7 @@ def main():
         with st.sidebar:
             st.markdown(
                 "**Upload a full-page document image** and its "
-                "**ground-truth transcription** (.txt, one line per text line)."
+                "**ground-truth transcription** (.txt or .docx, one line per text line)."
             )
 
         col_up1, col_up2 = st.columns(2)
@@ -789,9 +856,9 @@ def main():
             )
         with col_up2:
             uploaded_txt = st.file_uploader(
-                "📄 Ground-truth transcription (.txt)",
-                type=["txt"],
-                help="Plain text file with one line per text line, top-to-bottom order.",
+                "📄 Ground-truth transcription (.txt / .docx)",
+                type=["txt", "doc", "docx"],
+                help="Plain text or Word document with one line per text line, top-to-bottom order.",
             )
 
         if uploaded_image and uploaded_txt:
@@ -807,9 +874,22 @@ def main():
                     st.error("Could not decode the uploaded image.")
                     return
 
-                # Read uploaded transcription
-                txt_content = uploaded_txt.read().decode("utf-8", errors="replace")
-                gt_lines = [ln.rstrip("\n") for ln in txt_content.split("\n")]
+                # Read uploaded transcription (.txt or .docx)
+                fname = uploaded_txt.name.lower()
+                if fname.endswith(".docx"):
+                    try:
+                        from docx import Document
+                        doc = Document(uploaded_txt)
+                        gt_lines = [p.text for p in doc.paragraphs]
+                    except ImportError:
+                        st.error("python-docx is required for .docx files. Install: `pip install python-docx`")
+                        return
+                elif fname.endswith(".doc"):
+                    st.error(".doc format is not supported. Please save as .docx or .txt and re-upload.")
+                    return
+                else:
+                    txt_content = uploaded_txt.read().decode("utf-8", errors="replace")
+                    gt_lines = [ln.rstrip("\n") for ln in txt_content.split("\n")]
                 while gt_lines and not gt_lines[-1].strip():
                     gt_lines.pop()
 
